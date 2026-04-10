@@ -96,6 +96,8 @@ if [ "$ROLE" == "backend" ]; then
     rm -rf /app
     mkdir /app
 
+    rm -rf /tmp/app &>>"$LOGS_FILE"
+
     git clone https://github.com/Ramakrishna90111/Project28--Job-Internship-Application-Tracker-.git /tmp/app &>>"$LOGS_FILE"
     validate $? "Cloning repo"
 
