@@ -102,11 +102,14 @@ if [ "$ROLE" == "backend" ]; then
     cp -r /tmp/app/backend/* /app/
     cd /app
 
+    npm install -g typescript ts-node &>>"$LOGS_FILE"
+    validate $? "Installing TypeScript globally"
+
     npm install &>>"$LOGS_FILE"
     validate $? "Installing backend dependencies"
 
     # Update DB connection
-    sed -i "s/localhost/database.$DOMAIN_NAME/" /app/config/db.js
+   sed -i "s/localhost/database.$DOMAIN_NAME/" /app/config/db.ts
 
     # Systemd Service
     cat <<EOF >/etc/systemd/system/backend.service

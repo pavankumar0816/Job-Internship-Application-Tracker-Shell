@@ -1,10 +1,14 @@
 [Unit]
-Description = Backend Service
+Description=Backend Service
 
 [Service]
 User=project
-Environment=DB_HOST="mysql.pmpkdev.online"
-ExecStart=/bin/node /app/index.js
+Environment=DB_HOST=database.pmpkdev.online
+WorkingDirectory=/app
+
+ExecStart=/usr/bin/node /usr/bin/ts-node /app/server.ts
+
+Restart=always
 SyslogIdentifier=backend
 
 [Install]
