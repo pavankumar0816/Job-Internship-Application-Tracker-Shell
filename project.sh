@@ -1,136 +1,172 @@
 #!/bin/bash
 
+# -------------------------------
+# Load Environment Variables
+# -------------------------------
 source .env
 
-userid=$(id -u)
 LOGS_FOLDER="/var/log/shell-project"
-LOGS_FILE="$LOGS_FOLDER/$(basename $0).log"
+LOGS_FILE="$LOGS_FOLDER/project.log"
 START_TIME=$(date +%s)
-SCRIPT_DIR=$PWD
+
+mkdir -p "$LOGS_FOLDER"
 
 R="\e[31m"
 G="\e[32m"
 Y="\e[33m"
 N="\e[0m"
 
-mkdir -p "$LOGS_FOLDER"
 echo "$(date "+%Y-%m-%d %H:%M:%S") | Script Execution Started" | tee -a "$LOGS_FILE"
 
- 
-check_root(){
-    if [ "$userid" -ne 0 ]; then
-        echo -e "$R Run using sudo access $N"
-        exit 1
-    fi
-}
+# -------------------------------
+# Input Validation
+# -------------------------------
+if [ -z "$1" ]; then
+  echo -e "$R Usage: $0 {database|backend|frontend} $N"
+  exit 1
+fi
 
+ROLE=$1
+
+echo "Executing Role: $ROLE" | tee -a "$LOGS_FILE"
+
+# -------------------------------
+# Common Functions
+# -------------------------------
 validate(){
     if [ $1 -ne 0 ]; then
-       echo -e "$2 is $R Failed $N ..."
+       echo -e "$2 ... $R FAILED $N"
        exit 1
     else
-       echo -e "$2 is $G Success $N ..."
+       echo -e "$2 ... $G SUCCESS $N"
     fi
 }
 
-print_total_time(){
-    END_TIME=$(date +%s)
-    TOTAL_TIME=$(( END_TIME - START_TIME ))
-    echo -e "$(date "+%Y-%m-%d %H:%M:%S") | Script Executed in: $G $TOTAL_TIME seconds $N" | tee -a "$LOGS_FILE"
-}
-
-check_root
-
-if [ -z "$MYSQL_PASSWORD" ]; then
-    echo -e "$R MYSQL_PASSWORD not set in .env $N"
-    exit 1
-else
-    echo -e "$G MYSQL_PASSWORD loaded from .env $N"
-fi
- 
-if command -v node &>/dev/null && node -v | grep -q "^v20"; then
-      echo -e "NodeJS 20 already installed $Y Skipping ... $N" | tee -a "$LOGS_FILE"
-else
-      dnf module disable nodejs -y &>>"$LOGS_FILE"
-      validate $? "Disabling NodeJS module"
-
-      dnf module enable nodejs:20 -y &>>"$LOGS_FILE"
-      validate $? "Enabling NodeJS 20 module"
-
-      dnf install nodejs -y &>>"$LOGS_FILE"
-      validate $? "Installing NodeJS 20"
-fi
- 
-dnf install git -y &>>"$LOGS_FILE"
-validate $? "Installing git"
-
- 
-rm -rf /tmp/app-repo &>>"$LOGS_FILE"
-git clone https://github.com/Ramakrishna90111/Project28--Job-Internship-Application-Tracker-.git /tmp/app-repo &>>"$LOGS_FILE"
-validate $? "Cloning GitHub repo"
-
 # -------------------------------
-# Backend Setup
+# DATABASE SETUP
 # -------------------------------
-app_name=backend
-id project &>>"$LOGS_FILE" || useradd project &>>"$LOGS_FILE"
-validate $? "Ensuring project user exists"
+if [ "$ROLE" == "database" ]; then
 
-mkdir -p /app
-rm -rf /app/*
-cp -r /tmp/app-repo/$app_name/* /app/
-chown -R project:project /app
-cd /app || exit 1
-npm install &>>"$LOGS_FILE"
-validate $? "Installing backend dependencies"
+    dnf install mysql-server -y &>>"$LOGS_FILE"
+    validate $? "Installing MySQL"
 
-# systemd service
-cp "$SCRIPT_DIR/$app_name.service" "/etc/systemd/system/$app_name.service" &>>"$LOGS_FILE"
-validate $? "Copying systemd service file"
+    systemctl enable mysqld &>>"$LOGS_FILE"
+    systemctl start mysqld &>>"$LOGS_FILE"
+    validate $? "Starting MySQL"
 
-systemctl daemon-reload &>>"$LOGS_FILE"
-systemctl enable $app_name &>>"$LOGS_FILE"
-systemctl start $app_name &>>"$LOGS_FILE"
-validate $? "Starting backend service"
+    # Safe Password Setup
+    mysql -uroot -p"$MYSQL_PASSWORD" -e "SELECT 1" >/dev/null 2>&1
 
-# -------------------------------
-# MySQL Setup
-# -------------------------------
-dnf install mysql-server -y &>>"$LOGS_FILE"
-systemctl enable mysqld &>>"$LOGS_FILE"
-systemctl start mysqld &>>"$LOGS_FILE"
-
-mysql --connect-expired-password -uroot <<EOF &>>"$LOGS_FILE"
+    if [ $? -ne 0 ]; then
+        mysql --connect-expired-password -uroot <<EOF &>>"$LOGS_FILE"
 ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_PASSWORD';
 DELETE FROM mysql.user WHERE User='';
 DROP DATABASE IF EXISTS test;
 FLUSH PRIVILEGES;
 EOF
-validate $? "Setting MySQL root password"
+        validate $? "Setting MySQL root password"
+    else
+        echo -e "$Y MySQL password already set, skipping $N"
+    fi
 
-mysql -h localhost -uroot -p"$MYSQL_PASSWORD" < /app/schema/backend.sql &>>"$LOGS_FILE"
-validate $? "Loading MySQL schema"
+    # Download Schema
+    rm -rf /tmp/app &>>"$LOGS_FILE"
+    git clone https://github.com/Ramakrishna90111/Project28--Job-Internship-Application-Tracker-.git /tmp/app &>>"$LOGS_FILE"
+    validate $? "Cloning repo for schema"
+
+    mysql -h localhost -uroot -p"$MYSQL_PASSWORD" < /tmp/app/backend/schema/backend.sql &>>"$LOGS_FILE"
+    validate $? "Loading schema"
+
+    echo -e "$G DATABASE SETUP COMPLETED $N"
+
+fi
 
 # -------------------------------
-# Frontend Setup
+# BACKEND SETUP
 # -------------------------------
-app_name=frontend
-dnf install nginx -y &>>"$LOGS_FILE"
-validate $? "Installing Nginx"
+if [ "$ROLE" == "backend" ]; then
 
-systemctl enable nginx &>>"$LOGS_FILE"
-systemctl start nginx &>>"$LOGS_FILE"
-validate $? "Starting Nginx"
+    dnf module disable nodejs -y &>>"$LOGS_FILE"
+    dnf module enable nodejs:20 -y &>>"$LOGS_FILE"
+    dnf install nodejs git -y &>>"$LOGS_FILE"
+    validate $? "Installing NodeJS & Git"
 
-rm -rf /usr/share/nginx/html/*
-cp -r /tmp/app-repo/$app_name/* /usr/share/nginx/html/
-validate $? "Copying frontend code to Nginx html"
+    id project &>>"$LOGS_FILE" || useradd project &>>"$LOGS_FILE"
+    validate $? "Ensuring project user"
 
-cp "$SCRIPT_DIR/expense.conf" /etc/nginx/default.d/expense.conf &>>"$LOGS_FILE"
-validate $? "Copying Nginx config"
+    rm -rf /app
+    mkdir /app
 
-systemctl restart nginx &>>"$LOGS_FILE"
-validate $? "Restarting Nginx"
+    git clone https://github.com/Ramakrishna90111/Project28--Job-Internship-Application-Tracker-.git /tmp/app &>>"$LOGS_FILE"
+    validate $? "Cloning repo"
 
- 
-print_total_time
+    cp -r /tmp/app/backend/* /app/
+    cd /app
+
+    npm install &>>"$LOGS_FILE"
+    validate $? "Installing backend dependencies"
+
+    # Update DB connection
+    sed -i "s/localhost/database.$DOMAIN_NAME/" /app/config/db.js
+
+    # Systemd Service
+    cat <<EOF >/etc/systemd/system/backend.service
+[Unit]
+Description=Backend Service
+
+[Service]
+User=project
+Environment=DB_HOST=database.$DOMAIN_NAME
+ExecStart=/usr/bin/node /app/index.js
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable backend &>>"$LOGS_FILE"
+    systemctl start backend &>>"$LOGS_FILE"
+    validate $? "Starting backend service"
+
+    echo -e "$G BACKEND SETUP COMPLETED $N"
+
+fi
+
+# -------------------------------
+# FRONTEND SETUP
+# -------------------------------
+if [ "$ROLE" == "frontend" ]; then
+
+    dnf install nginx -y &>>"$LOGS_FILE"
+    validate $? "Installing Nginx"
+
+    systemctl enable nginx &>>"$LOGS_FILE"
+    systemctl start nginx &>>"$LOGS_FILE"
+    validate $? "Starting Nginx"
+
+    rm -rf /usr/share/nginx/html/*
+
+    git clone https://github.com/Ramakrishna90111/Project28--Job-Internship-Application-Tracker-.git /tmp/app &>>"$LOGS_FILE"
+    validate $? "Cloning repo"
+
+    cp -r /tmp/app/frontend/* /usr/share/nginx/html/
+    validate $? "Copying frontend code"
+
+    # Update Backend API URL
+    sed -i "s/localhost/backend.$DOMAIN_NAME/" /usr/share/nginx/html/js/config.js
+
+    systemctl restart nginx &>>"$LOGS_FILE"
+    validate $? "Restarting Nginx"
+
+    echo -e "$G FRONTEND SETUP COMPLETED $N"
+
+fi
+
+# -------------------------------
+# TOTAL TIME
+# -------------------------------
+END_TIME=$(date +%s)
+TOTAL_TIME=$(( END_TIME - START_TIME ))
+
+echo -e "$(date "+%Y-%m-%d %H:%M:%S") | Script Executed in: $G $TOTAL_TIME seconds $N" | tee -a "$LOGS_FILE"
