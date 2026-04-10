@@ -74,8 +74,7 @@ EOF
     git clone https://github.com/Ramakrishna90111/Project28--Job-Internship-Application-Tracker-.git /tmp/app &>>"$LOGS_FILE"
     validate $? "Cloning repo for schema"
 
-    mysql -h localhost -uroot -p"$MYSQL_PASSWORD" < /tmp/app/backend/schema/backend.sql &>>"$LOGS_FILE"
-    validate $? "Loading schema"
+    echo "Skipping schema load - handled by backend ORM"
 
     echo -e "$G DATABASE SETUP COMPLETED $N"
 
