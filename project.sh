@@ -156,6 +156,8 @@ if [ "$ROLE" == "frontend" ]; then
     # Clean old files
     rm -rf /usr/share/nginx/html/*
 
+    rm -rf /tmp/app &>>"$LOGS_FILE"
+
     # Clone repo
     git clone https://github.com/Ramakrishna90111/Project28--Job-Internship-Application-Tracker-.git /tmp/app &>>"$LOGS_FILE"
     validate $? "Cloning repo"
