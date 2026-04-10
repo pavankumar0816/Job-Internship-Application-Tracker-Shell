@@ -140,26 +140,42 @@ fi
 # -------------------------------
 # FRONTEND SETUP
 # -------------------------------
+# -------------------------------
+# FRONTEND SETUP
+# -------------------------------
 if [ "$ROLE" == "frontend" ]; then
 
-    dnf install nginx -y &>>"$LOGS_FILE"
-    validate $? "Installing Nginx"
+    # Install Nginx + NodeJS
+    dnf install nginx nodejs -y &>>"$LOGS_FILE"
+    validate $? "Installing Nginx & NodeJS"
 
     systemctl enable nginx &>>"$LOGS_FILE"
     systemctl start nginx &>>"$LOGS_FILE"
     validate $? "Starting Nginx"
 
+    # Clean old files
     rm -rf /usr/share/nginx/html/*
 
+    # Clone repo
     git clone https://github.com/Ramakrishna90111/Project28--Job-Internship-Application-Tracker-.git /tmp/app &>>"$LOGS_FILE"
     validate $? "Cloning repo"
 
-    cp -r /tmp/app/frontend/* /usr/share/nginx/html/
-    validate $? "Copying frontend code"
+    # Go to frontend folder
+    cd /tmp/app/frontend
 
-    # Update Backend API URL
-    sed -i "s/localhost/backend.$DOMAIN_NAME/" /usr/share/nginx/html/js/config.js
+    # Install dependencies
+    npm install &>>"$LOGS_FILE"
+    validate $? "Installing frontend dependencies"
 
+    # Build project
+    npm run build &>>"$LOGS_FILE"
+    validate $? "Building frontend"
+
+    # Copy build files to nginx
+    cp -r dist/* /usr/share/nginx/html/
+    validate $? "Copying build files"
+
+    # Restart nginx
     systemctl restart nginx &>>"$LOGS_FILE"
     validate $? "Restarting Nginx"
 
